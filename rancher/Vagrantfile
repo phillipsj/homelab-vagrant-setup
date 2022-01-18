@@ -1,0 +1,46 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  config.vagrant.plugins = ["vagrant-libvirt"]
+
+  # Disable the sync folders, they aren't required
+  config.vm.synced_folder ".", "/vagrant", :disabled => true
+
+  # Setting up network bridge
+  config.vm.network "public_network", :type => "bridge" , :dev => "br0", :mode => "bridge"
+
+  # Set variables from environment
+  libvirt_host = ENV['LIBVIRT_HOST']
+  libvirt_username = ENV['LIBVIRT_USERNAME']
+  rancher_version = ENV['RANCHER_VERSION'] || "stable"
+  bootstrap_password = ENV['CATTLE_BOOTSTRAP_PASSWORD'] || "RancherIsCool"
+
+  # Options for Libvirt Vagrant provider.
+  config.vm.provider :libvirt do |libvirt|
+    libvirt.driver = "kvm"
+    libvirt.host = libvirt_host
+    libvirt.connect_via_ssh = true
+    libvirt.username = libvirt_username
+    libvirt.storage_pool_name = "default"
+  end
+
+  config.vm.define :ranch, primary: true do |ranch|
+    ranch.vm.host_name = "ranch"
+    ranch.vm.box = "opensuse/Leap-15.3.x86_64"
+
+    ranch.vm.provider :libvirt do |libvirt|
+      libvirt.memory = 8192
+      libvirt.cpus = 2
+      libvirt.disk_driver :cache => 'none'
+    end
+
+    ranch.vm.provision :shell, privileged: true, inline: "zypper --non-interactive install docker hostname"
+    ranch.vm.provision :shell, privileged: true, inline: "systemctl enable docker"
+    ranch.vm.provision :shell, privileged: true, inline: "systemctl start docker"
+    ranch.vm.provision :shell, privileged: true, inline: "usermod -aG docker vagrant"
+    # Other envs that can be set. https://github.com/rancher/rancher/blob/release/v2.6/chart/templates/deployment.yaml#L92-L141
+    ranch.vm.provision :shell, privileged: true, inline: "docker run -d --restart=unless-stopped -e CATTLE_BOOTSTRAP_PASSWORD=#{bootstrap_password} -p 80:80 -p 443:443 --privileged rancher/rancher:#{rancher_version}"
+
+  end
+end
