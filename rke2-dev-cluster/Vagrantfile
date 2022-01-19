@@ -1,0 +1,87 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Setup script for Windows Nodes
+$windows_setup = <<-SCRIPT
+  Set-MpPreference -DisableRealtimeMonitoring $true -DisableScriptScanning $true -DisableArchiveScanning $true -ExclusionPath c:\\var\\lib\\rancher\\rke2\\bin,c:\\usr\\local\\bin
+  Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
+  Install-WindowsFeature -Name Containers
+  exit 0
+SCRIPT
+
+Vagrant.configure("2") do |config|
+  config.vagrant.plugins = ["vagrant-libvirt", "vagrant-reload"]
+
+  # Disable the sync folders, they aren't required
+  config.vm.synced_folder ".", "/vagrant", :disabled => true
+
+  # Setting up network bridge
+  config.vm.network "public_network", :type => "bridge" , :dev => "br0", :mode => "bridge"
+
+  # Set variables from environment
+  libvirt_host = ENV['LIBVIRT_HOST']
+  libvirt_username = ENV['LIBVIRT_USERNAME']
+
+  # Options for Libvirt Vagrant provider.
+  config.vm.provider :libvirt do |libvirt|
+    libvirt.driver = "kvm"
+    libvirt.host = libvirt_host
+    libvirt.connect_via_ssh = true
+    libvirt.username = libvirt_username
+    libvirt.storage_pool_name = "default"
+  end
+
+  config.vm.define :control, primary: true do |control|
+    control.vm.host_name = "rke2control"
+    control.vm.box = "opensuse/Leap-15.3.x86_64"
+    control.vm.provider :libvirt do |libvirt|
+      libvirt.memory = 8192
+      libvirt.cpus = 2
+      libvirt.disk_driver :cache => 'none'
+    end
+
+    control.vm.provision :shell, privileged: true, inline: "zypper --non-interactive install hostname"
+  end
+
+  config.vm.define :linuxnode, primary: true do |linuxnode|
+    linuxnode.vm.host_name = "rke2linux"
+    linuxnode.vm.box = "opensuse/Leap-15.3.x86_64"
+    linuxnode.vm.provider :libvirt do |libvirt|
+      libvirt.memory = 8192
+      libvirt.cpus = 2
+      libvirt.disk_driver :cache => 'none'
+    end
+
+    linuxnode.vm.provision :shell, privileged: true, inline: "zypper --non-interactive install hostname"
+  end
+
+  # Windows 2019 worker nodes.
+  config.vm.define :win2019, primary: true do |win2019|
+    win2019.vm.host_name = "rke2win2019"
+    win2019.vm.box = "jborean93/WindowsServer2019"
+
+    win2019.vm.provider :libvirt do |libvirt|
+      libvirt.memory = 8192
+      libvirt.cpus = 2
+      libvirt.disk_driver :cache => 'none'
+    end
+
+    win2019.vm.provision :shell, privileged: true, inline: $windows_setup
+    win2019.vm.provision :reload
+  end
+
+  # Windows 2022 worker nodes.
+  config.vm.define :win2022, primary: true do |win2022|
+    win2022.vm.host_name = "rke2win2022"
+    win2022.vm.box = "jborean93/WindowsServer2022"
+
+    win2022.vm.provider :libvirt do |libvirt|
+      libvirt.memory = 8192
+      libvirt.cpus = 2
+      libvirt.disk_driver :cache => 'none'
+    end
+
+    win2022.vm.provision :shell, privileged: true, inline: $windows_setup
+    win2022.vm.provision :reload
+  end
+end
